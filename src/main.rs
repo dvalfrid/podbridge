@@ -6,8 +6,8 @@ use anyhow::Result;
 use log::{error, info};
 use std::time::{Duration, Instant};
 
-/// How often we poll Bluetooth for updated device/battery state.
-const POLL_INTERVAL: Duration = Duration::from_secs(30);
+/// How often we refresh the tray from the BLE cache + paired-device list.
+const POLL_INTERVAL: Duration = Duration::from_secs(5);
 
 fn main() -> Result<()> {
     env_logger::Builder::from_env(
@@ -22,6 +22,12 @@ fn main() -> Result<()> {
     let mut last_poll = Instant::now() - POLL_INTERVAL; // force immediate first poll
 
     loop {
+        // On Windows, tray-icon requires Win32 messages to be pumped on the
+        // main thread — menu clicks, icon redraws, etc. all go through the
+        // message queue. pump_messages() drains it without blocking.
+        #[cfg(windows)]
+        pump_messages();
+
         // Handle UI events (menu clicks, quit, etc.)
         for event in ui.poll_events() {
             match event {
@@ -54,13 +60,29 @@ fn main() -> Result<()> {
                     if let Err(e) = ui.update_devices(&devices) {
                         error!("UI update failed: {e}");
                     }
+                    info!("Tray updated: {} device(s) found", devices.len());
                 }
                 Err(e) => error!("Bluetooth poll failed: {e}"),
             }
             last_poll = Instant::now();
         }
 
-        // Yield briefly to avoid busy-looping.
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// Drain the Win32 message queue without blocking. Required for tray-icon to
+/// render and deliver menu/click events on Windows.
+#[cfg(windows)]
+fn pump_messages() {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE,
+    };
+    unsafe {
+        let mut msg = MSG::default();
+        while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
+            let _ = TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
     }
 }

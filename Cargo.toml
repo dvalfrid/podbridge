@@ -26,6 +26,7 @@ windows = { version = "0.58", features = [
     "Foundation",
     "Foundation_Collections",
     "Storage_Streams",
+    "Win32_UI_WindowsAndMessaging",
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

@@ -20,20 +20,20 @@ To add more models, only change `model_from_continuity()` in `src/airpods/models
 
 ```
 src/
-├── main.rs              Main loop: 30s poll cycle + UI event handling
+├── main.rs              Main loop: 5s poll cycle + UI event handling
 ├── airpods/
 │   ├── mod.rs           Shared types (AirPodsDevice, BatteryInfo, NoiseControlMode, AirPodsModel)
-│   ├── models.rs        BLE continuity payload → AirPodsModel mapping
+│   ├── models.rs        BLE Proximity Pairing parser + AirPodsModel mapping
 │   └── aap.rs           AAP protocol: packet parsing and building (L2CAP PSM 0x1001)
 ├── bluetooth/
 │   ├── mod.rs           BluetoothBackend trait + platform factory create_backend()
-│   ├── scanner.rs       BLE advertisement scanning → model detection
-│   ├── windows.rs       WinRT backend (windows-crate)
-│   └── linux.rs         BlueZ backend (bluer-crate)
+│   ├── scanner.rs       BLE advertisement scanning → model detection (helper)
+│   ├── windows.rs       WinRT backend: paired device enumeration + BLE watcher
+│   └── linux.rs         BlueZ backend (bluer-crate, stubs)
 └── ui/
     ├── mod.rs           UiBackend trait + factory create_ui()
     ├── tray.rs          Shared tray label/tooltip helpers
-    ├── windows.rs       Windows tray (tray-icon crate)
+    ├── windows.rs       Windows tray with programmatic placeholder icon
     └── linux.rs         Linux tray (tray-icon crate, GTK backend)
 ```
 
@@ -52,28 +52,43 @@ src/
 ### Implemented
 
 - [x] All shared types and traits (`AirPodsDevice`, `BatteryInfo`, `BluetoothBackend`, `UiBackend`)
-- [x] AAP protocol helpers (packet parsing, command building)
-- [x] BLE advertisement scanning with model detection
-- [x] Windows: paired device enumeration via WinRT
-- [x] Windows and Linux tray with quit menu
-- [x] Main loop with 30s poll cycle
+- [x] AAP protocol helpers (packet parsing, command building — for future L2CAP use)
+- [x] Apple Proximity Pairing BLE advertisement parser (`models.rs:parse_proximity_pairing`)
+- [x] Windows: passive BLE advertisement watcher (`BluetoothLEAdvertisementWatcher`)
+- [x] Windows: paired device enumeration via WinRT, enriched with BLE battery cache
+- [x] Windows tray with programmatic placeholder icon (32×32 white circle)
+- [x] Linux tray stub
+- [x] Main loop with 5s tray refresh cycle
 
 ### Stubs (not yet implemented)
 
-- [ ] Windows: battery reading via AAP over L2CAP
 - [ ] Windows: connect / disconnect
-- [ ] Windows: ANC control
+- [ ] Windows: ANC control (via AAP L2CAP)
 - [ ] Linux: all Bluetooth functionality (bluer async)
-- [ ] Tray icon image (no PNG/ICO asset yet)
+- [ ] Real tray icon asset (replace placeholder circle)
 - [ ] Toast notifications on Windows
 
-## Next milestone: battery display on Windows (MVP)
+## Battery approach — how it works
 
-1. **L2CAP socket via WinRT** — open a channel to PSM 0x1001 on a paired device
-2. **Send AAP device-info request** — see `src/airpods/aap.rs:build_device_info_request()`
-3. **Parse the response** — see `src/airpods/aap.rs:parse_battery_packet()`
-4. **Display in tray** — `WindowsTray::update_devices()` is already wired up
-5. **Tray icon image** — create a simple 32x32 PNG and load it in `WindowsTray::new()`
+Battery data comes from **passive BLE advertisement scanning**, not an active connection.
+AirPods broadcast Apple Proximity Pairing packets (manufacturer data, company ID `0x004C`)
+containing battery levels whenever they are on and in range.
+
+- `WindowsBluetoothBackend` starts a `BluetoothLEAdvertisementWatcher` on init
+- Each received Apple ad is parsed by `parse_proximity_pairing()` in `models.rs`
+- Results are stored in a thread-safe `Arc<Mutex<HashMap<u64, BatteryInfo>>>` cache
+- `paired_devices()` enriches each WinRT-enumerated device with its cached battery data
+- Tray refreshes every 5 s, which re-reads the cache
+
+## Next milestone: verify on real hardware
+
+1. **Run with `RUST_LOG=debug`** and watch for `BLE battery update` log lines
+2. **Model ID verification** — `model_from_continuity()` in `models.rs` has placeholder IDs
+   for AirPods 4; update if the debug log shows unexpected device types
+3. **Battery nibble mapping** — `parse_proximity_pairing()` uses community-documented layout;
+   confirm L/R assignment matches physical pods (swap nibbles in `models.rs` if needed)
+4. **ANC control** — next major feature; requires AAP over L2CAP (`aap.rs` has the packet
+   builders ready, needs a WinRT socket implementation)
 
 ## Protocol references
 
