@@ -1,0 +1,37 @@
+[package]
+name = "podbridge"
+version = "0.1.0"
+edition = "2021"
+description = "Cross-platform AirPods manager for Windows and Linux"
+repository = "https://github.com/danielvalfridsson/podbridge"
+
+[[bin]]
+name = "podbridge"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+tray-icon = "0.19"
+log = "0.4"
+env_logger = "0.11"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Devices_Bluetooth",
+    "Devices_Bluetooth_Advertisement",
+    "Devices_Bluetooth_GenericAttributeProfile",
+    "Devices_Enumeration",
+    "Foundation",
+    "Foundation_Collections",
+    "Storage_Streams",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+bluer = { version = "0.17", features = ["full"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
